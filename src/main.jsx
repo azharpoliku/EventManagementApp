@@ -149,6 +149,7 @@ function Dashboard({ data }) {
 function EventsPage({ data }) {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('All')
+  const [dateFilter, setDateFilter] = useState('')
   const [sortDirection, setSortDirection] = useState('asc')
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -159,7 +160,8 @@ function EventsPage({ data }) {
     const searchTerm = search.trim().toLowerCase()
     return [...data.events]
       .filter((event) => status === 'All' || event.status === status)
-      .filter((event) => [event.name, event.location, event.organizer].some((value) => value?.toLowerCase().includes(searchTerm)))
+      .filter((event) => event.name?.toLowerCase().includes(searchTerm))
+      .filter((event) => !dateFilter || event.date === dateFilter)
       .sort((first, second) => {
         const comparison = (first.date || '').localeCompare(second.date || '')
         return sortDirection === 'asc' ? comparison : -comparison
@@ -198,14 +200,23 @@ function EventsPage({ data }) {
     window.dispatchEvent(new Event('ems-data-updated'))
   }
 
+  function clearFilters() {
+    setSearch('')
+    setStatus('All')
+    setDateFilter('')
+    setSortDirection('asc')
+  }
+
   return (
     <section>
       <div className="page-heading"><div><p className="eyebrow">Management</p><h2>Events</h2></div><div className="heading-actions"><span className="muted">{filteredEvents.length} of {data.events.length} events</span><button type="button" onClick={() => setShowCreateForm((current) => !current)}>{showCreateForm ? 'Close' : 'Create Event'}</button></div></div>
       {showCreateForm && <div className="content-panel create-panel"><h3>{editingId ? 'Edit Event' : 'Create Event'}</h3><form className="create-form" onSubmit={saveEvent}><label>Name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label><label>Date<input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} required /></label><label>Time<input type="time" value={form.time} onChange={(event) => setForm({ ...form, time: event.target.value })} /></label><label>Location<input value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} /></label><label>Capacity<input type="number" min="1" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} required /></label><label>Status<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option>Draft</option><option>Upcoming</option><option>Ongoing</option><option>Completed</option><option>Cancelled</option></select></label><button type="submit">Save Event</button></form>{formMessage && <p className={formMessage.includes('successfully') ? 'success feedback' : 'error feedback'} role="alert">{formMessage}</p>}</div>}
       <div className="filters" aria-label="Event filters">
-        <label className="filter-field">Search<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search events" /></label>
+        <label className="filter-field">Search by event name<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search event name" /></label>
         <label className="filter-field">Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option>All</option><option>Draft</option><option>Upcoming</option><option>Ongoing</option><option>Completed</option><option>Cancelled</option></select></label>
+        <label className="filter-field">Date<input type="date" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} /></label>
         <button type="button" className="secondary-button sort-button" onClick={() => setSortDirection((current) => current === 'asc' ? 'desc' : 'asc')}>Date: {sortDirection === 'asc' ? 'Oldest first' : 'Newest first'}</button>
+        <button type="button" className="secondary-button sort-button" onClick={clearFilters}>Clear filters</button>
       </div>
       <div className="table-panel">
         {filteredEvents.length === 0 ? <div className="empty-state centered"><h3>No events found</h3><p>{data.events.length === 0 ? 'Events stored in localStorage will appear here.' : 'Try changing the search or status filter.'}</p></div> : (
