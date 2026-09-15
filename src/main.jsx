@@ -303,6 +303,7 @@ function EventsPage({ data }) {
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState({ name: '', date: '', time: '', location: '', capacity: '', status: 'Upcoming' })
   const [formMessage, setFormMessage] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
 
   const filteredEvents = useMemo(() => {
     const searchTerm = search.trim().toLowerCase()
@@ -320,6 +321,7 @@ function EventsPage({ data }) {
 
   async function saveEvent(submitEvent) {
     submitEvent.preventDefault()
+    if (isSaving) return
     if (!form.name.trim() || !form.date || !form.capacity || Number(form.capacity) < 1) {
       setFormMessage('Enter an event name, date, and capacity of at least 1.')
       return
@@ -331,6 +333,8 @@ function EventsPage({ data }) {
     const event = { id: editingId || `event-${Date.now()}`, name: form.name.trim(), description: '', date: form.date, time: form.time, location: form.location.trim(), organizer: '', capacity: Number(form.capacity), status: form.status }
     const events = editingId ? data.events.map((item) => item.id === editingId ? { ...item, ...event } : item) : [...data.events, event]
     let storageMessage = 'Event saved to localStorage fallback.'
+    setIsSaving(true)
+    setFormMessage('Saving event...')
     try {
       await sendEntityRequest(editingId ? 'update' : 'create', 'events', event)
       localStorage.setItem(STORAGE_KEYS.events, JSON.stringify(events))
@@ -338,6 +342,7 @@ function EventsPage({ data }) {
     } catch {
       localStorage.setItem(STORAGE_KEYS.events, JSON.stringify(events))
     }
+    setIsSaving(false)
     window.dispatchEvent(new Event('ems-data-updated'))
     setForm({ name: '', date: '', time: '', location: '', capacity: '', status: 'Upcoming' })
     setEditingId(null)
@@ -370,7 +375,7 @@ function EventsPage({ data }) {
   return (
     <section>
       <div className="page-heading"><div><p className="eyebrow">Management</p><h2>Events</h2></div><div className="heading-actions"><span className="muted">{filteredEvents.length} of {data.events.length} events</span><button type="button" onClick={() => setShowCreateForm((current) => !current)}>{showCreateForm ? 'Close' : 'Create Event'}</button></div></div>
-      {showCreateForm && <div className="content-panel create-panel"><h3>{editingId ? 'Edit Event' : 'Create Event'}</h3><form className="create-form" onSubmit={saveEvent}><label>Name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label><label>Date<input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} required /></label><label>Time<input type="time" value={form.time} onChange={(event) => setForm({ ...form, time: event.target.value })} /></label><label>Location<input value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} /></label><label>Capacity<input type="number" min="1" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} required /></label><label>Status<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option>Draft</option><option>Upcoming</option><option>Ongoing</option><option>Completed</option><option>Cancelled</option></select></label><button type="submit">Save Event</button></form>{formMessage && <p className={formMessage.includes('successfully') ? 'success feedback' : 'error feedback'} role="alert">{formMessage}</p>}</div>}
+      {showCreateForm && <div className="content-panel create-panel"><h3>{editingId ? 'Edit Event' : 'Create Event'}</h3><form className="create-form" onSubmit={saveEvent}><label>Name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label><label>Date<input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} required /></label><label>Time<input type="time" value={form.time} onChange={(event) => setForm({ ...form, time: event.target.value })} /></label><label>Location<input value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} /></label><label>Capacity<input type="number" min="1" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} required /></label><label>Status<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option>Draft</option><option>Upcoming</option><option>Ongoing</option><option>Completed</option><option>Cancelled</option></select></label><button type="submit" disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Event'}</button></form>{formMessage && <p className={formMessage.includes('successfully') ? 'success feedback' : 'error feedback'} role="alert">{formMessage}</p>}</div>}
       <div className="filters" aria-label="Event filters">
         <label className="filter-field">Search by event name<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search event name" /></label>
         <label className="filter-field">Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option>All</option><option>Draft</option><option>Upcoming</option><option>Ongoing</option><option>Completed</option><option>Cancelled</option></select></label>
@@ -393,6 +398,7 @@ function ParticipantsPage({ data }) {
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState({ name: '', email: '', phone: '', organisation: '' })
   const [formMessage, setFormMessage] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
 
   const filteredParticipants = useMemo(() => {
     const searchTerm = search.trim().toLowerCase()
@@ -404,6 +410,7 @@ function ParticipantsPage({ data }) {
 
   async function saveParticipant(submitEvent) {
     submitEvent.preventDefault()
+    if (isSaving) return
     const email = form.email.trim().toLowerCase()
     if (!form.name.trim() || !email || !email.includes('@')) {
       setFormMessage('Enter a name and a valid email address.')
@@ -416,6 +423,8 @@ function ParticipantsPage({ data }) {
     const participant = { id: editingId || `participant-${Date.now()}`, name: form.name.trim(), email, phone: form.phone.trim(), organisation: form.organisation.trim() }
     const participants = editingId ? data.participants.map((item) => item.id === editingId ? participant : item) : [...data.participants, participant]
     let storageMessage = 'Participant saved to localStorage fallback.'
+    setIsSaving(true)
+    setFormMessage('Saving participant...')
     try {
       await sendParticipantRequest(editingId ? 'update' : 'create', participant)
       localStorage.setItem(STORAGE_KEYS.participants, JSON.stringify(participants))
@@ -423,6 +432,7 @@ function ParticipantsPage({ data }) {
     } catch {
       localStorage.setItem(STORAGE_KEYS.participants, JSON.stringify(participants))
     }
+    setIsSaving(false)
     window.dispatchEvent(new Event('ems-data-updated'))
     setForm({ name: '', email: '', phone: '', organisation: '' })
     setEditingId(null)
@@ -449,7 +459,7 @@ function ParticipantsPage({ data }) {
   return (
     <section>
       <div className="page-heading"><div><p className="eyebrow">Management</p><h2>Participants</h2></div><div className="heading-actions"><span className="muted">{filteredParticipants.length} of {data.participants.length} participants</span><button type="button" onClick={() => setShowCreateForm((current) => !current)}>{showCreateForm ? 'Close' : 'Add Participant'}</button></div></div>
-      {showCreateForm && <div className="content-panel create-panel"><h3>{editingId ? 'Edit Participant' : 'Add Participant'}</h3><form className="create-form" onSubmit={saveParticipant}><label>Name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label><label>Email<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required /></label><label>Phone<input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label><label>Organisation<input value={form.organisation} onChange={(event) => setForm({ ...form, organisation: event.target.value })} /></label><button type="submit">Save Participant</button></form>{formMessage && <p className={formMessage.includes('successfully') ? 'success feedback' : 'error feedback'} role="alert">{formMessage}</p>}</div>}
+      {showCreateForm && <div className="content-panel create-panel"><h3>{editingId ? 'Edit Participant' : 'Add Participant'}</h3><form className="create-form" onSubmit={saveParticipant}><label>Name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label><label>Email<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required /></label><label>Phone<input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label><label>Organisation<input value={form.organisation} onChange={(event) => setForm({ ...form, organisation: event.target.value })} /></label><button type="submit" disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Participant'}</button></form>{formMessage && <p className={formMessage.includes('successfully') ? 'success feedback' : 'error feedback'} role="alert">{formMessage}</p>}</div>}
       <div className="filters" aria-label="Participant filters">
         <label className="filter-field">Search<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search participants" /></label>
       </div>
@@ -466,9 +476,11 @@ function RegistrationsPage({ data }) {
   const [eventId, setEventId] = useState('')
   const [participantId, setParticipantId] = useState('')
   const [message, setMessage] = useState({ type: '', text: '' })
+  const [isSaving, setIsSaving] = useState(false)
 
   async function handleSubmit(submitEvent) {
     submitEvent.preventDefault()
+    if (isSaving) return
     const selectedEvent = data.events.find((event) => event.id === eventId)
     const selectedParticipant = data.participants.find((participant) => participant.id === participantId)
 
@@ -500,6 +512,8 @@ function RegistrationsPage({ data }) {
     }
     const updatedRegistrations = [...data.registrations, registration]
     let storageMessage = 'Registration saved to localStorage fallback.'
+    setIsSaving(true)
+    setMessage({ type: 'status', text: 'Saving registration...' })
     try {
       await sendEntityRequest('create', 'registrations', registration)
       localStorage.setItem(STORAGE_KEYS.registrations, JSON.stringify(updatedRegistrations))
@@ -507,6 +521,7 @@ function RegistrationsPage({ data }) {
     } catch {
       localStorage.setItem(STORAGE_KEYS.registrations, JSON.stringify(updatedRegistrations))
     }
+    setIsSaving(false)
     window.dispatchEvent(new Event('ems-data-updated'))
     setEventId('')
     setParticipantId('')
@@ -522,7 +537,7 @@ function RegistrationsPage({ data }) {
         <form className="registration-form" onSubmit={handleSubmit}>
           <label className="filter-field">Event<select value={eventId} onChange={(event) => { setEventId(event.target.value); setMessage({ type: '', text: '' }) }}><option value="">Select an event</option>{data.events.map((event) => <option key={event.id} value={event.id}>{event.name} · {event.date || 'No date'}</option>)}</select></label>
           <label className="filter-field">Participant<select value={participantId} onChange={(event) => { setParticipantId(event.target.value); setMessage({ type: '', text: '' }) }}><option value="">Select a participant</option>{data.participants.map((participant) => <option key={participant.id} value={participant.id}>{participant.name} · {participant.email}</option>)}</select></label>
-          <button type="submit">Create Registration</button>
+          <button type="submit" disabled={isSaving}>{isSaving ? 'Saving...' : 'Create Registration'}</button>
         </form>
         {message.text && <p className={message.type === 'error' ? 'error feedback' : 'success feedback'} role="alert">{message.text}</p>}
         {(data.events.length === 0 || data.participants.length === 0) && <p className="empty-state">Add at least one event and one participant before creating a registration.</p>}
@@ -533,6 +548,8 @@ function RegistrationsPage({ data }) {
 
 function AttendancePage({ data }) {
   const [eventId, setEventId] = useState('')
+  const [savingAttendanceId, setSavingAttendanceId] = useState(null)
+  const [message, setMessage] = useState('')
   const selectedRegistrations = data.registrations.filter((registration) => registration.eventId === eventId)
   const selectedEvent = data.events.find((event) => event.id === eventId)
 
@@ -541,6 +558,7 @@ function AttendancePage({ data }) {
   }
 
   async function markAttendance(registration, status) {
+    if (savingAttendanceId === registration.id) return
     const existingRecord = data.attendance.find((record) => record.registrationId === registration.id)
     const attendanceRecord = {
       id: existingRecord?.id || `attendance-${Date.now()}-${registration.id}`,
@@ -553,12 +571,17 @@ function AttendancePage({ data }) {
     const updatedAttendance = existingRecord
       ? data.attendance.map((record) => record.id === existingRecord.id ? attendanceRecord : record)
       : [...data.attendance, attendanceRecord]
+    setSavingAttendanceId(registration.id)
+    setMessage('Saving attendance...')
     try {
       await sendEntityRequest(existingRecord ? 'update' : 'create', 'attendance', attendanceRecord)
       localStorage.setItem(STORAGE_KEYS.attendance, JSON.stringify(updatedAttendance))
+      setMessage('Attendance saved to Google Sheets.')
     } catch {
       localStorage.setItem(STORAGE_KEYS.attendance, JSON.stringify(updatedAttendance))
+      setMessage('Attendance saved to localStorage fallback.')
     }
+    setSavingAttendanceId(null)
     window.dispatchEvent(new Event('ems-data-updated'))
   }
 
@@ -571,9 +594,10 @@ function AttendancePage({ data }) {
       <div className="content-panel attendance-panel">
         <label className="filter-field">Event<select value={eventId} onChange={(event) => setEventId(event.target.value)}><option value="">Select an event</option>{data.events.map((event) => <option key={event.id} value={event.id}>{event.name} · {event.date || 'No date'}</option>)}</select></label>
         {selectedEvent && <div className="attendance-summary"><span>Registered: <strong>{selectedRegistrations.length}</strong></span><span>Present: <strong>{presentCount}</strong></span><span>Absent: <strong>{absentCount}</strong></span></div>}
+        {message && <p className="success feedback" role="status">{message}</p>}
       </div>
       {eventId && selectedRegistrations.length === 0 && <div className="content-panel centered"><h3>No registered participants</h3><p className="muted">Only participants registered for this event can be marked for attendance.</p></div>}
-      {eventId && selectedRegistrations.length > 0 && <div className="table-panel attendance-table"><div className="table-scroll"><table><thead><tr><th>Participant</th><th>Email</th><th>Attendance</th></tr></thead><tbody>{selectedRegistrations.map((registration) => { const participant = data.participants.find((item) => item.id === registration.participantId); const currentStatus = getAttendance(registration.id); return <tr key={registration.id}><td><strong>{participant?.name || 'Unknown participant'}</strong></td><td>{participant?.email || '—'}</td><td><div className="attendance-actions"><button type="button" className={currentStatus === 'Present' ? 'attendance-selected' : 'secondary-button'} onClick={() => markAttendance(registration, 'Present')}>Present</button><button type="button" className={currentStatus === 'Absent' ? 'attendance-selected absent-selected' : 'secondary-button'} onClick={() => markAttendance(registration, 'Absent')}>Absent</button></div></td></tr> })}</tbody></table></div></div>}
+      {eventId && selectedRegistrations.length > 0 && <div className="table-panel attendance-table"><div className="table-scroll"><table><thead><tr><th>Participant</th><th>Email</th><th>Attendance</th></tr></thead><tbody>{selectedRegistrations.map((registration) => { const participant = data.participants.find((item) => item.id === registration.participantId); const currentStatus = getAttendance(registration.id); const isSaving = savingAttendanceId === registration.id; return <tr key={registration.id}><td><strong>{participant?.name || 'Unknown participant'}</strong></td><td>{participant?.email || '—'}</td><td><div className="attendance-actions"><button type="button" disabled={isSaving} className={currentStatus === 'Present' ? 'attendance-selected' : 'secondary-button'} onClick={() => markAttendance(registration, 'Present')}>{isSaving ? 'Saving...' : 'Present'}</button><button type="button" disabled={isSaving} className={currentStatus === 'Absent' ? 'attendance-selected absent-selected' : 'secondary-button'} onClick={() => markAttendance(registration, 'Absent')}>Absent</button></div></td></tr> })}</tbody></table></div></div>}
       {!eventId && <div className="content-panel centered"><h3>Select an event</h3><p className="muted">Choose an event to view its registered participants.</p></div>}
     </section>
   )
