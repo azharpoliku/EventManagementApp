@@ -41,7 +41,7 @@ button:focus-visible { outline: 3px solid #b8ead8; outline-offset: 2px; }
 .heading-actions { display: flex; align-items: center; gap: 16px; }
 .create-panel { margin-bottom: 20px; }
 .create-panel h3 { margin: 0 0 16px; }
-.create-form { display: grid; grid-template-columns: repeat(3, 1fr); align-items: end; gap: 16px; margin: 0; }
+.create-form { display: grid; grid-template-columns: repeat(3, 1fr); align-items: start; gap: 16px; margin: 0; }
 .create-form label { display: grid; gap: 6px; }
 .create-form button { align-self: end; }
 .row-actions { display: flex; gap: 8px; }
