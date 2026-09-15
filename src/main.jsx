@@ -46,8 +46,8 @@ function mapRemoteRecord(entity, record) {
     id: record.eventId,
     name: record.eventName,
     description: record.description || '',
-    date: record.date || '',
-    time: record.time || '',
+    date: normalizeSheetDate(record.date),
+    time: normalizeSheetTime(record.time),
     location: record.location || '',
     organizer: record.organizer || '',
     capacity: Number(record.capacity || 0),
@@ -75,6 +75,17 @@ function mapRemoteRecord(entity, record) {
     status: record.status || '',
     markedAt: record.markedAt || '',
   }
+}
+
+function normalizeSheetDate(value) {
+  return value ? String(value).slice(0, 10) : ''
+}
+
+function normalizeSheetTime(value) {
+  if (!value) return ''
+  const text = String(value)
+  const isoTime = text.match(/T(\d{2}:\d{2})/)
+  return isoTime ? isoTime[1] : text.slice(0, 5)
 }
 
 function mapLocalRecord(entity, record) {
