@@ -4,7 +4,7 @@ import './styles.css'
 
 const DEMO_USERNAME = 'admin'
 const DEMO_PASSWORD = 'admin123'
-const GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbybGrOVtLWaBPRV4Vq776faQNMjhq4t2hBJmK17XzrJLnD9NrcWaC72D6aMTBhCktdy5g/exec'
+const GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbx38mptLGJUQhwcJRWBGEjUYqAEK3ts0dKM2UIewZ4WRtJQx0Y9jWRRJzkNdzCXvdhhMg/exec'
 const STORAGE_KEYS = {
   users: 'eventManagement_users',
   events: 'eventManagement_events',
@@ -57,7 +57,7 @@ function mapRemoteRecord(entity, record) {
     id: record.participantId,
     name: record.name,
     email: record.email,
-    phone: record.phone,
+    phone: record.phone == null ? '' : String(record.phone),
     organisation: record.organisation,
   }
   if (entity === 'registrations') return {
@@ -88,6 +88,14 @@ function normalizeSheetTime(value) {
   return isoTime ? isoTime[1] : text.slice(0, 5)
 }
 
+function normalizePhone(value) {
+  return String(value || '').trim().replace(/[()\s-]/g, '')
+}
+
+function isValidInternationalPhone(value) {
+  return /^\+[1-9]\d{7,14}$/.test(value)
+}
+
 function mapLocalRecord(entity, record) {
   if (entity === 'events') return {
     eventId: record.id,
@@ -104,7 +112,7 @@ function mapLocalRecord(entity, record) {
     participantId: record.id,
     name: record.name,
     email: record.email,
-    phone: record.phone || '',
+    phone: normalizePhone(record.phone),
     organisation: record.organisation || '',
   }
   if (entity === 'registrations') return {
@@ -171,7 +179,7 @@ function requestJsonp(params) {
     const timeout = window.setTimeout(() => {
       cleanup()
       reject(new Error('Google Sheets API request timed out.'))
-    }, 10000)
+    }, 30000)
     window[callbackName] = (payload) => {
       window.clearTimeout(timeout)
       cleanup()
@@ -420,7 +428,12 @@ function ParticipantsPage({ data }) {
       setFormMessage('Participant email must be unique.')
       return
     }
-    const participant = { id: editingId || `participant-${Date.now()}`, name: form.name.trim(), email, phone: form.phone.trim(), organisation: form.organisation.trim() }
+    const phone = normalizePhone(form.phone)
+    if (!isValidInternationalPhone(phone)) {
+      setFormMessage('Enter a phone number with country code, e.g. +60123456789.')
+      return
+    }
+    const participant = { id: editingId || `participant-${Date.now()}`, name: form.name.trim(), email, phone, organisation: form.organisation.trim() }
     const participants = editingId ? data.participants.map((item) => item.id === editingId ? participant : item) : [...data.participants, participant]
     let storageMessage = 'Participant saved to localStorage fallback.'
     setIsSaving(true)
@@ -459,7 +472,7 @@ function ParticipantsPage({ data }) {
   return (
     <section>
       <div className="page-heading"><div><p className="eyebrow">Management</p><h2>Participants</h2></div><div className="heading-actions"><span className="muted">{filteredParticipants.length} of {data.participants.length} participants</span><button type="button" onClick={() => setShowCreateForm((current) => !current)}>{showCreateForm ? 'Close' : 'Add Participant'}</button></div></div>
-      {showCreateForm && <div className="content-panel create-panel"><h3>{editingId ? 'Edit Participant' : 'Add Participant'}</h3><form className="create-form" onSubmit={saveParticipant}><label>Name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label><label>Email<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required /></label><label>Phone<input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label><label>Organisation<input value={form.organisation} onChange={(event) => setForm({ ...form, organisation: event.target.value })} /></label><button type="submit" disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Participant'}</button></form>{formMessage && <p className={formMessage.includes('successfully') ? 'success feedback' : 'error feedback'} role="alert">{formMessage}</p>}</div>}
+      {showCreateForm && <div className="content-panel create-panel"><h3>{editingId ? 'Edit Participant' : 'Add Participant'}</h3><form className="create-form" onSubmit={saveParticipant}><label>Name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label><label>Email<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required /></label><label>Phone<input type="tel" inputMode="tel" placeholder="+60 12-345 6789" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} required aria-describedby="participant-phone-help" /><span id="participant-phone-help" className="field-help">Use international format, for example +60123456789.</span></label><label>Organisation<input value={form.organisation} onChange={(event) => setForm({ ...form, organisation: event.target.value })} /></label><button type="submit" disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Participant'}</button></form>{formMessage && <p className={formMessage.includes('successfully') ? 'success feedback' : 'error feedback'} role="alert">{formMessage}</p>}</div>}
       <div className="filters" aria-label="Participant filters">
         <label className="filter-field">Search<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search participants" /></label>
       </div>

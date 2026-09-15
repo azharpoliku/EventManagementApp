@@ -52,8 +52,11 @@ function createRecord_(entity, record) {
   validate_(entity, record, false)
   const id = String(record[SHEETS[entity].id] || Utilities.getUuid())
   if (readRecords_(entity).some(item => String(item[SHEETS[entity].id]) === id)) throw error_('DUPLICATE_ID', 'This ID already exists.')
-  const headers = sheet_(entity).getRange(1, 1, 1, sheet_(entity).getLastColumn()).getValues()[0]
-  sheet_(entity).appendRow(headers.map(header => header === SHEETS[entity].id ? id : record[header] ?? ''))
+  const sheet = sheet_(entity)
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+  prepareParticipantPhoneColumn_(entity, sheet, headers)
+  sheet.appendRow(headers.map(header => header === SHEETS[entity].id ? id : record[header] ?? ''))
+  writeParticipantPhone_(entity, sheet, headers, sheet.getLastRow(), record.phone)
   return id
 }
 
@@ -66,8 +69,24 @@ function updateRecord_(entity, record) {
   const headers = values[0].map(String)
   const rowIndex = values.findIndex((row, index) => index > 0 && String(row[headers.indexOf(idKey)]) === id)
   if (rowIndex < 1) throw error_('NOT_FOUND', 'Record not found.')
+  prepareParticipantPhoneColumn_(entity, sheet, headers)
   sheet.getRange(rowIndex + 1, 1, 1, headers.length).setValues([headers.map(header => record[header] ?? '')])
+  writeParticipantPhone_(entity, sheet, headers, rowIndex + 1, record.phone)
   return id
+}
+
+function writeParticipantPhone_(entity, sheet, headers, rowNumber, phone) {
+  if (entity !== 'participants') return
+  const phoneColumn = headers.indexOf('phone')
+  if (phoneColumn >= 0 && phone) {
+    sheet.getRange(rowNumber, phoneColumn + 1).setNumberFormat('@').setValue(String(phone))
+  }
+}
+
+function prepareParticipantPhoneColumn_(entity, sheet, headers) {
+  if (entity !== 'participants') return
+  const phoneColumn = headers.indexOf('phone')
+  if (phoneColumn >= 0) sheet.getRange(1, phoneColumn + 1, sheet.getMaxRows(), 1).setNumberFormat('@')
 }
 
 function deleteRecord_(entity, record) {
@@ -97,6 +116,9 @@ function validate_(entity, record, updating) {
   if (updating && !record[idKey]) throw error_('INVALID_ID', 'A record ID is required.')
   if (entity === 'participants') {
     if (!record.name || !record.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(record.email))) throw error_('INVALID_EMAIL', 'A valid participant email is required.')
+    const phone = String(record.phone || '').trim().replace(/[()\s-]/g, '')
+    if (!/^\+[1-9]\d{7,14}$/.test(phone)) throw error_('INVALID_PHONE', 'Phone number must include a country code, e.g. +60123456789.')
+    record.phone = phone
     const duplicate = readRecords_(entity).some(item => String(item.email).toLowerCase() === String(record.email).toLowerCase() && String(item[idKey]) !== String(record[idKey] || ''))
     if (duplicate) throw error_('DUPLICATE_EMAIL', 'Participant email must be unique.')
   }
