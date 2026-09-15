@@ -4,6 +4,7 @@ import './styles.css'
 
 const DEMO_USERNAME = 'admin'
 const DEMO_PASSWORD = 'admin123'
+const GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbybGrOVtLWaBPRV4Vq776faQNMjhq4t2hBJmK17XzrJLnD9NrcWaC72D6aMTBhCktdy5g/exec'
 const STORAGE_KEYS = {
   users: 'eventManagement_users',
   events: 'eventManagement_events',
@@ -37,6 +38,56 @@ function initializeStorage() {
   if (!localStorage.getItem(STORAGE_KEYS.users)) {
     localStorage.setItem(STORAGE_KEYS.users, JSON.stringify([{ id: 'user-1', username: DEMO_USERNAME, password: DEMO_PASSWORD, name: 'Administrator' }]))
   }
+}
+
+async function fetchRemoteParticipants() {
+  const payload = await requestJsonp({ entity: 'participants' })
+  if (!payload.ok || !Array.isArray(payload.data)) throw new Error('Participants API returned an invalid response.')
+  return payload.data.map((participant) => ({
+    id: participant.participantId,
+    name: participant.name,
+    email: participant.email,
+    phone: participant.phone,
+    organisation: participant.organisation,
+  }))
+}
+
+async function sendParticipantRequest(action, record) {
+  const payload = await requestJsonp({
+    action,
+    entity: 'participants',
+    record: JSON.stringify({ ...record, participantId: record.id || record.participantId }),
+  })
+  if (!payload.ok) throw new Error(payload.error?.message || 'Participants API request failed.')
+  return payload.data
+}
+
+function requestJsonp(params) {
+  return new Promise((resolve, reject) => {
+    const callbackName = `emsJsonp_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const script = document.createElement('script')
+    const query = new URLSearchParams({ ...params, callback: callbackName })
+    const cleanup = () => {
+      delete window[callbackName]
+      script.remove()
+    }
+    const timeout = window.setTimeout(() => {
+      cleanup()
+      reject(new Error('Google Sheets API request timed out.'))
+    }, 10000)
+    window[callbackName] = (payload) => {
+      window.clearTimeout(timeout)
+      cleanup()
+      resolve(payload)
+    }
+    script.onerror = () => {
+      window.clearTimeout(timeout)
+      cleanup()
+      reject(new Error('Google Sheets API request failed.'))
+    }
+    script.src = `${GOOGLE_SHEETS_API_URL}?${query.toString()}`
+    document.body.appendChild(script)
+  })
 }
 
 function readAuthState() {
@@ -242,7 +293,7 @@ function ParticipantsPage({ data }) {
 
   const registrationCount = (participantId) => data.registrations.filter((registration) => registration.participantId === participantId).length
 
-  function saveParticipant(submitEvent) {
+  async function saveParticipant(submitEvent) {
     submitEvent.preventDefault()
     const email = form.email.trim().toLowerCase()
     if (!form.name.trim() || !email || !email.includes('@')) {
@@ -255,20 +306,34 @@ function ParticipantsPage({ data }) {
     }
     const participant = { id: editingId || `participant-${Date.now()}`, name: form.name.trim(), email, phone: form.phone.trim(), organisation: form.organisation.trim() }
     const participants = editingId ? data.participants.map((item) => item.id === editingId ? participant : item) : [...data.participants, participant]
-    localStorage.setItem(STORAGE_KEYS.participants, JSON.stringify(participants))
+    let storageMessage = 'Participant saved to localStorage fallback.'
+    try {
+      await sendParticipantRequest(editingId ? 'update' : 'create', participant)
+      localStorage.setItem(STORAGE_KEYS.participants, JSON.stringify(participants))
+      storageMessage = 'Participant saved to Google Sheets.'
+    } catch {
+      localStorage.setItem(STORAGE_KEYS.participants, JSON.stringify(participants))
+    }
     window.dispatchEvent(new Event('ems-data-updated'))
     setForm({ name: '', email: '', phone: '', organisation: '' })
     setEditingId(null)
-    setFormMessage(editingId ? 'Participant updated successfully.' : 'Participant created successfully.')
+    setFormMessage(`${editingId ? 'Participant updated successfully.' : 'Participant created successfully.'} ${storageMessage}`)
   }
 
   function editParticipant(participant) { setForm(participant); setEditingId(participant.id); setShowCreateForm(true); setFormMessage('') }
-  function deleteParticipant(participant) {
+  async function deleteParticipant(participant) {
     if (!window.confirm(`Delete ${participant.name}? Related registrations and attendance will also be removed.`)) return
     const participantRegistrationIds = new Set(data.registrations.filter((registration) => registration.participantId === participant.id).map((registration) => registration.id))
-    localStorage.setItem(STORAGE_KEYS.participants, JSON.stringify(data.participants.filter((item) => item.id !== participant.id)))
-    localStorage.setItem(STORAGE_KEYS.registrations, JSON.stringify(data.registrations.filter((registration) => registration.participantId !== participant.id)))
-    localStorage.setItem(STORAGE_KEYS.attendance, JSON.stringify(data.attendance.filter((record) => !participantRegistrationIds.has(record.registrationId))))
+    try {
+      await sendParticipantRequest('delete', participant)
+      localStorage.setItem(STORAGE_KEYS.participants, JSON.stringify(data.participants.filter((item) => item.id !== participant.id)))
+      localStorage.setItem(STORAGE_KEYS.registrations, JSON.stringify(data.registrations.filter((registration) => registration.participantId !== participant.id)))
+      localStorage.setItem(STORAGE_KEYS.attendance, JSON.stringify(data.attendance.filter((record) => !participantRegistrationIds.has(record.registrationId))))
+    } catch {
+      localStorage.setItem(STORAGE_KEYS.participants, JSON.stringify(data.participants.filter((item) => item.id !== participant.id)))
+      localStorage.setItem(STORAGE_KEYS.registrations, JSON.stringify(data.registrations.filter((registration) => registration.participantId !== participant.id)))
+      localStorage.setItem(STORAGE_KEYS.attendance, JSON.stringify(data.attendance.filter((record) => !participantRegistrationIds.has(record.registrationId))))
+    }
     window.dispatchEvent(new Event('ems-data-updated'))
   }
 
@@ -405,6 +470,20 @@ function ProtectedApp({ onLogout }) {
       window.removeEventListener('storage', refreshData)
       window.removeEventListener('ems-data-updated', refreshData)
     }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    fetchRemoteParticipants()
+      .then((participants) => {
+        if (!active) return
+        localStorage.setItem(STORAGE_KEYS.participants, JSON.stringify(participants))
+        setData((current) => ({ ...current, participants }))
+      })
+      .catch(() => {
+        // Keep the existing localStorage data as the temporary fallback.
+      })
+    return () => { active = false }
   }, [])
 
   return (
