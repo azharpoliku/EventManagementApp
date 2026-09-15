@@ -80,6 +80,14 @@ function deleteRecord_(entity, record) {
   const rowIndex = values.findIndex((row, index) => index > 0 && String(row[headers.indexOf(idKey)]) === id)
   if (rowIndex < 1) throw error_('NOT_FOUND', 'Record not found.')
   sheet.deleteRow(rowIndex + 1)
+  if (entity === 'events') {
+    deleteMatchingRows_('registrations', 'eventId', id)
+    deleteMatchingRows_('attendance', 'eventId', id)
+  }
+  if (entity === 'participants') {
+    deleteMatchingRows_('registrations', 'participantId', id)
+    deleteMatchingRows_('attendance', 'participantId', id)
+  }
   return id
 }
 
@@ -101,6 +109,26 @@ function validate_(entity, record, updating) {
     const event = readRecords_('events').find(item => String(item.eventId) === String(record.eventId))
     const count = records.filter(item => String(item.eventId) === String(record.eventId) && String(item.registrationId) !== String(record.registrationId || '')).length
     if (Number(event.capacity) > 0 && count >= Number(event.capacity)) throw error_('CAPACITY_FULL', 'Event capacity has been reached.')
+  }
+  if (entity === 'attendance') {
+    if (!record.eventId || !record.participantId || !record.status) throw error_('INVALID_ATTENDANCE', 'Event, participant and attendance status are required.')
+    if (!readRecords_('events').some(item => String(item.eventId) === String(record.eventId))) throw error_('INVALID_EVENT', 'Event does not exist.')
+    if (!readRecords_('participants').some(item => String(item.participantId) === String(record.participantId))) throw error_('INVALID_PARTICIPANT', 'Participant does not exist.')
+    const registered = readRecords_('registrations').some(item => String(item.eventId) === String(record.eventId) && String(item.participantId) === String(record.participantId))
+    if (!registered) throw error_('INVALID_REGISTRATION', 'Attendance requires a valid registration.')
+    if (!['Present', 'Absent'].includes(String(record.status))) throw error_('INVALID_ATTENDANCE', 'Attendance status must be Present or Absent.')
+  }
+}
+
+function deleteMatchingRows_(entity, field, value) {
+  const sheet = sheet_(entity)
+  const values = sheet.getDataRange().getValues()
+  if (values.length < 2) return
+  const headers = values[0].map(String)
+  const fieldIndex = headers.indexOf(field)
+  if (fieldIndex < 0) return
+  for (let index = values.length - 1; index >= 1; index -= 1) {
+    if (String(values[index][fieldIndex]) === String(value)) sheet.deleteRow(index + 1)
   }
 }
 

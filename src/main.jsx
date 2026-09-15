@@ -34,6 +34,106 @@ function readDashboardData() {
   }
 }
 
+const ENTITY_KEYS = {
+  events: STORAGE_KEYS.events,
+  participants: STORAGE_KEYS.participants,
+  registrations: STORAGE_KEYS.registrations,
+  attendance: STORAGE_KEYS.attendance,
+}
+
+function mapRemoteRecord(entity, record) {
+  if (entity === 'events') return {
+    id: record.eventId,
+    name: record.eventName,
+    description: record.description || '',
+    date: record.date || '',
+    time: record.time || '',
+    location: record.location || '',
+    organizer: record.organizer || '',
+    capacity: Number(record.capacity || 0),
+    status: record.status || 'Upcoming',
+  }
+  if (entity === 'participants') return {
+    id: record.participantId,
+    name: record.name,
+    email: record.email,
+    phone: record.phone,
+    organisation: record.organisation,
+  }
+  if (entity === 'registrations') return {
+    id: record.registrationId,
+    eventId: record.eventId,
+    participantId: record.participantId,
+    registrationDate: record.registrationDate || '',
+    status: record.status || 'Registered',
+  }
+  return {
+    id: record.attendanceId,
+    registrationId: record.registrationId || '',
+    eventId: record.eventId,
+    participantId: record.participantId,
+    status: record.status || '',
+    markedAt: record.markedAt || '',
+  }
+}
+
+function mapLocalRecord(entity, record) {
+  if (entity === 'events') return {
+    eventId: record.id,
+    eventName: record.name,
+    description: record.description || '',
+    date: record.date || '',
+    time: record.time || '',
+    location: record.location || '',
+    organizer: record.organizer || '',
+    capacity: Number(record.capacity || 0),
+    status: record.status || 'Upcoming',
+  }
+  if (entity === 'participants') return {
+    participantId: record.id,
+    name: record.name,
+    email: record.email,
+    phone: record.phone || '',
+    organisation: record.organisation || '',
+  }
+  if (entity === 'registrations') return {
+    registrationId: record.id,
+    eventId: record.eventId,
+    participantId: record.participantId,
+    registrationDate: record.registrationDate || '',
+    status: record.status || 'Registered',
+  }
+  return {
+    attendanceId: record.id,
+    eventId: record.eventId,
+    participantId: record.participantId,
+    status: record.status || '',
+  }
+}
+
+async function fetchRemoteCollection(entity) {
+  const payload = await requestJsonp({ entity })
+  if (!payload.ok || !Array.isArray(payload.data)) throw new Error(`${entity} API returned an invalid response.`)
+  return payload.data.map((record) => mapRemoteRecord(entity, record))
+}
+
+async function sendEntityRequest(action, entity, record) {
+  const payload = await requestJsonp({ action, entity, record: JSON.stringify(mapLocalRecord(entity, record)) })
+  if (!payload.ok) throw new Error(payload.error?.message || `${entity} API request failed.`)
+  return payload.data
+}
+
+async function syncCollection(entity) {
+  const remoteRecords = await fetchRemoteCollection(entity)
+  const localRecords = readCollection(ENTITY_KEYS[entity])
+  if (remoteRecords.length === 0 && localRecords.length > 0) {
+    for (const record of localRecords) await sendEntityRequest('create', entity, record)
+    return localRecords
+  }
+  localStorage.setItem(ENTITY_KEYS[entity], JSON.stringify(remoteRecords))
+  return remoteRecords
+}
+
 function initializeStorage() {
   if (!localStorage.getItem(STORAGE_KEYS.users)) {
     localStorage.setItem(STORAGE_KEYS.users, JSON.stringify([{ id: 'user-1', username: DEMO_USERNAME, password: DEMO_PASSWORD, name: 'Administrator' }]))
@@ -41,25 +141,11 @@ function initializeStorage() {
 }
 
 async function fetchRemoteParticipants() {
-  const payload = await requestJsonp({ entity: 'participants' })
-  if (!payload.ok || !Array.isArray(payload.data)) throw new Error('Participants API returned an invalid response.')
-  return payload.data.map((participant) => ({
-    id: participant.participantId,
-    name: participant.name,
-    email: participant.email,
-    phone: participant.phone,
-    organisation: participant.organisation,
-  }))
+  return syncCollection('participants')
 }
 
 async function sendParticipantRequest(action, record) {
-  const payload = await requestJsonp({
-    action,
-    entity: 'participants',
-    record: JSON.stringify({ ...record, participantId: record.id || record.participantId }),
-  })
-  if (!payload.ok) throw new Error(payload.error?.message || 'Participants API request failed.')
-  return payload.data
+  return sendEntityRequest(action, 'participants', record)
 }
 
 function requestJsonp(params) {
@@ -217,11 +303,11 @@ function EventsPage({ data }) {
         const comparison = (first.date || '').localeCompare(second.date || '')
         return sortDirection === 'asc' ? comparison : -comparison
       })
-  }, [data.events, search, status, sortDirection])
+  }, [data.events, search, status, dateFilter, sortDirection])
 
   const registrationCount = (eventId) => data.registrations.filter((registration) => registration.eventId === eventId).length
 
-  function saveEvent(submitEvent) {
+  async function saveEvent(submitEvent) {
     submitEvent.preventDefault()
     if (!form.name.trim() || !form.date || !form.capacity || Number(form.capacity) < 1) {
       setFormMessage('Enter an event name, date, and capacity of at least 1.')
@@ -233,18 +319,30 @@ function EventsPage({ data }) {
     }
     const event = { id: editingId || `event-${Date.now()}`, name: form.name.trim(), description: '', date: form.date, time: form.time, location: form.location.trim(), organizer: '', capacity: Number(form.capacity), status: form.status }
     const events = editingId ? data.events.map((item) => item.id === editingId ? { ...item, ...event } : item) : [...data.events, event]
-    localStorage.setItem(STORAGE_KEYS.events, JSON.stringify(events))
+    let storageMessage = 'Event saved to localStorage fallback.'
+    try {
+      await sendEntityRequest(editingId ? 'update' : 'create', 'events', event)
+      localStorage.setItem(STORAGE_KEYS.events, JSON.stringify(events))
+      storageMessage = 'Event saved to Google Sheets.'
+    } catch {
+      localStorage.setItem(STORAGE_KEYS.events, JSON.stringify(events))
+    }
     window.dispatchEvent(new Event('ems-data-updated'))
     setForm({ name: '', date: '', time: '', location: '', capacity: '', status: 'Upcoming' })
     setEditingId(null)
-    setFormMessage(editingId ? 'Event updated successfully.' : 'Event created successfully.')
+    setFormMessage(`${editingId ? 'Event updated successfully.' : 'Event created successfully.'} ${storageMessage}`)
   }
 
   function editEvent(event) { setForm(event); setEditingId(event.id); setShowCreateForm(true); setFormMessage('') }
-  function deleteEvent(event) {
+  async function deleteEvent(event) {
     if (!window.confirm(`Delete ${event.name}? Related registrations and attendance will also be removed.`)) return
     const registrations = data.registrations.filter((registration) => registration.eventId !== event.id)
     const registrationIds = new Set(data.registrations.filter((registration) => registration.eventId === event.id).map((registration) => registration.id))
+    try {
+      await sendEntityRequest('delete', 'events', event)
+    } catch {
+      // Keep localStorage available if the remote request is unavailable.
+    }
     localStorage.setItem(STORAGE_KEYS.events, JSON.stringify(data.events.filter((item) => item.id !== event.id)))
     localStorage.setItem(STORAGE_KEYS.registrations, JSON.stringify(registrations))
     localStorage.setItem(STORAGE_KEYS.attendance, JSON.stringify(data.attendance.filter((record) => !registrationIds.has(record.registrationId))))
@@ -358,7 +456,7 @@ function RegistrationsPage({ data }) {
   const [participantId, setParticipantId] = useState('')
   const [message, setMessage] = useState({ type: '', text: '' })
 
-  function handleSubmit(submitEvent) {
+  async function handleSubmit(submitEvent) {
     submitEvent.preventDefault()
     const selectedEvent = data.events.find((event) => event.id === eventId)
     const selectedParticipant = data.participants.find((participant) => participant.id === participantId)
@@ -390,11 +488,18 @@ function RegistrationsPage({ data }) {
       status: 'Registered',
     }
     const updatedRegistrations = [...data.registrations, registration]
-    localStorage.setItem(STORAGE_KEYS.registrations, JSON.stringify(updatedRegistrations))
+    let storageMessage = 'Registration saved to localStorage fallback.'
+    try {
+      await sendEntityRequest('create', 'registrations', registration)
+      localStorage.setItem(STORAGE_KEYS.registrations, JSON.stringify(updatedRegistrations))
+      storageMessage = 'Registration saved to Google Sheets.'
+    } catch {
+      localStorage.setItem(STORAGE_KEYS.registrations, JSON.stringify(updatedRegistrations))
+    }
     window.dispatchEvent(new Event('ems-data-updated'))
     setEventId('')
     setParticipantId('')
-    setMessage({ type: 'success', text: `${selectedParticipant.name} was registered for ${selectedEvent.name}.` })
+    setMessage({ type: 'success', text: `${selectedParticipant.name} was registered for ${selectedEvent.name}. ${storageMessage}` })
   }
 
   return (
@@ -424,7 +529,7 @@ function AttendancePage({ data }) {
     return data.attendance.find((record) => record.registrationId === registrationId)?.status || ''
   }
 
-  function markAttendance(registration, status) {
+  async function markAttendance(registration, status) {
     const existingRecord = data.attendance.find((record) => record.registrationId === registration.id)
     const attendanceRecord = {
       id: existingRecord?.id || `attendance-${Date.now()}-${registration.id}`,
@@ -437,7 +542,12 @@ function AttendancePage({ data }) {
     const updatedAttendance = existingRecord
       ? data.attendance.map((record) => record.id === existingRecord.id ? attendanceRecord : record)
       : [...data.attendance, attendanceRecord]
-    localStorage.setItem(STORAGE_KEYS.attendance, JSON.stringify(updatedAttendance))
+    try {
+      await sendEntityRequest(existingRecord ? 'update' : 'create', 'attendance', attendanceRecord)
+      localStorage.setItem(STORAGE_KEYS.attendance, JSON.stringify(updatedAttendance))
+    } catch {
+      localStorage.setItem(STORAGE_KEYS.attendance, JSON.stringify(updatedAttendance))
+    }
     window.dispatchEvent(new Event('ems-data-updated'))
   }
 
@@ -474,11 +584,15 @@ function ProtectedApp({ onLogout }) {
 
   useEffect(() => {
     let active = true
-    fetchRemoteParticipants()
-      .then((participants) => {
+    Promise.all(Object.keys(ENTITY_KEYS).map((entity) => syncCollection(entity).catch(() => readCollection(ENTITY_KEYS[entity]))))
+      .then(([events, participants, registrations, attendance]) => {
         if (!active) return
-        localStorage.setItem(STORAGE_KEYS.participants, JSON.stringify(participants))
-        setData((current) => ({ ...current, participants }))
+        const normalizedAttendance = attendance.map((record) => ({
+          ...record,
+          registrationId: record.registrationId || registrations.find((registration) => registration.eventId === record.eventId && registration.participantId === record.participantId)?.id || '',
+        }))
+        localStorage.setItem(STORAGE_KEYS.attendance, JSON.stringify(normalizedAttendance))
+        setData({ events, participants, registrations, attendance: normalizedAttendance })
       })
       .catch(() => {
         // Keep the existing localStorage data as the temporary fallback.
